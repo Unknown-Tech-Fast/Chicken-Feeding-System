@@ -1,10 +1,5 @@
-modul  master COA 
-modul  master mapping journal 
-modul  master journal header
 modul  master journal detail
-modul  master customer dan vendor ( kode unik ambil dari nomor npwp , nama customer , alamat )
 modul  master ayam ( laying , growing, broiler, doc -> day of chicken )
 modul  master kandang
 modul  master lokasi 
-modul  transaksi operasional
 modul  transaksi ayam 
