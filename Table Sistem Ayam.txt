@@ -6,3 +6,5 @@ modul  master customer dan vendor ( kode unik ambil dari nomor npwp , nama custo
 modul  master ayam ( laying , growing, broiler, doc -> day of chicken )
 modul  master kandang
 modul  master lokasi 
+modul  transaksi operasional
+modul  transaksi ayam 

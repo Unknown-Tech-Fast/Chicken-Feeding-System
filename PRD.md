@@ -57,7 +57,7 @@ flowchart LR
 
 Penjelasan singkat:
 1. File export Odoo di-upload, dicek, lalu masuk ke jurnal.
-2. Data manual CIMANGKOK diinput di sistem.
+2. Data manual CIMANGKOK diinput di sistem. *bantu crosschek penting enggaknya 
 3. Engine membagi biaya bulanan ke tiap kandang, menghitung deplesi dan mutasi, lalu menyimpan hasilnya per versi.
 4. Hasil final membuat jurnal alokasi dan bisa dibandingkan dengan sheet CIMANGKOK.
 
@@ -65,7 +65,7 @@ Penjelasan singkat:
 
 **Dikerjakan di Phase 1**
 - Import 3 sheet input ke jurnal
-- Master data minimal
+- Master data minimal ( Lihat file Table Sistem Ayam.txt )
 - Input manual data CIMANGKOK
 - Engine alokasi untuk satu farm (CIMANGKOK)
 - Tampilan setara sheet CIMANGKOK dan pengecekan terhadap angka Excel
@@ -128,10 +128,12 @@ Master adalah data acuan yang dipakai berulang. Berikut pemetaan dari daftar mas
 | Ayam | Disederhanakan | Cukup daftar jenis ayam yang terhubung ke akun persediaan (GPS, PS, Broiler, DOC, jantan atau betina). Growing atau laying adalah fase di baris bulanan, bukan master |
 | Kandang | Ya | Kode unik per lokasi, contoh `B-CMK/10FL` |
 | Lokasi | Ya | Plus daftar alias, contoh `Farm CImangkok` dipetakan ke `Farm Cimangkok` |
+*tambahkan yang belum ada seperti di file Table Sistem Ayam.txt *
 
 **Tambahan minimal:** Divisi (GPS dan TIB), Kategori Operasional (pakan, disinfectant, vaccine, medicines & vitamin, overhead), Periode (open atau closed), dan Parameter (contoh: masa deplesi).
 
 **Soal NPWP sebagai kode unik:** kode partner diambil dari NPWP dan cabang tidak dibedakan. Di export Odoo satu NPWP bisa muncul dengan beberapa nama rekanan (di data ada 3 grup NPWP dengan total 9 nama rekanan, misalnya `PT INTERTAMA TRIKENCANA BERSINAR` dengan akhiran CIJANGKAR, CIPANAS, KPA 1, dan TANJUNG). Semua nama itu didaftarkan sebagai alias dari satu partner, jadi saat import tidak membuat partner baru. Rekanan yang tidak punya NPWP perlu aturan tersendiri (lihat pertanyaan 7 di Bagian 5).
+*dibuat tetap 1 nama rekanan 1 NPWP meskipun banyak cabang*
 
 ---
 
@@ -147,6 +149,7 @@ Master adalah data acuan yang dipakai berulang. Berikut pemetaan dari daftar mas
 | | `input_alokasi` | Pembelian ayam, mutasi, dan penyesuaian, lengkap dengan alasan dan pembuat |
 | Hasil | `alokasi_run`, `alokasi_baris` | Hasil hitung per versi (draft atau final), kolom setara CIMANGKOK |
 | Sistem | `audit_log` | Siapa mengubah apa dan kapan |
+*tambahkan yang belum ada seperti di file Table Sistem Ayam.txt *
 
 **Aturan data**
 - Uang memakai `NUMERIC(20,2)`, jumlah ayam memakai bilangan bulat.
