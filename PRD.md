@@ -1,300 +1,376 @@
-# PRD: Sistem Jurnal & Alokasi Biaya Ayam
+# Product Requirement Document (PRD)
+# Sistem Jurnal & Alokasi Biaya Ayam (Cimangkok Cost Allocation Engine)
 
-**Phase 1: dari sheet input sampai sheet CIMANGKOK**
-
-| | |
+| Dokumen | Keterangan |
 |---|---|
-| Status | Draft v0.3, 20 Oktober 2026 |
-| Stack | Laravel (API), React + TypeScript (tampilan), Supabase (database sementara) |
-| Sumber | `konsep_alokasi_biaya.xlsx`, `flowchart-draft.drawio`, `Table Sistem Ayam.txt` |
+| **Versi** | v1.0 (Revised PM & UI/UX Streamlined MVP) |
+| **Tanggal Revisi** | 20 Oktober 2026 |
+| **Status** | Approved for MVP Development |
+| **Tech Stack** | Backend: Laravel (REST API) • Frontend: React + TypeScript (Vite, TanStack Table) • DB: PostgreSQL / Supabase |
+| **Referensi Utama** | `konsep alokasi biaya (1).xlsx` (Sheet OVK, PAKAN.VOD, AYAM, CIMANGKOK) • `Table Sistem Ayam.txt` |
 
 ---
 
-## Ringkasan Singkat
+## 1. Executive Summary & Project Objective
 
-**Yang dibangun:** sistem yang mengubah data export Odoo (yang sekarang diolah di Excel) menjadi jurnal, lalu menghitung alokasi biaya per kandang seperti di sheet CIMANGKOK.
+Sistem ini dibangun untuk **mengotomasi proses alokasi biaya operasional dan deplesi populasi ayam** dari data tarikan buku besar Odoo yang selama ini dikerjakan secara manual di Excel (`konsep alokasi biaya (1).xlsx`).
 
-**Odoo tidak diganti.** Odoo tetap jadi sumber data. Sistem ini hanya lapisan jurnal dan alokasi di atasnya.
+### Problem Statement
+1. **Olah Data Manual yang Berat:** File Excel mengolah puluhan ribu baris data buku besar (AYAM 14.134 baris, PAKAN.VOD 57.412 baris, OVK 11.380 baris) dengan Pivot Table dan rumus bertingkat (`SUMIFS`, `VLOOKUP`, `ROUND`), rawan *freeze*, error referensi, dan tidak *multi-user*.
+2. **Pergerakan Data Populasi yang Dinamis:** Input populasi ayam (Saldo Awal, In, Out, Saldo Akhir) bergerak setiap bulan. Jika ada revisi di bulan lampau, keterkaitan Saldo Akhir bulan lalu menjadi Saldo Awal bulan berikutnya rawan terputus atau salah tumpuk di Excel.
+3. **Ketergantungan Formula Silang:** Perhitungan biaya pakan, OVK, pembelian ayam, dan mutasi kandang mengacu pada pivot sheet lain yang rentan pergeseran baris.
 
-**Hasil akhir Phase 1:**
-1. Data 3 sheet input (AYAM, PAKAN.VOD, OVK) bisa di-import dan menjadi jurnal.
-2. Bagian yang di Excel diketik manual (populasi, pembelian, mutasi, penyesuaian) bisa diinput di sistem.
-3. Alokasi biaya CIMANGKOK dihitung otomatis dan hasilnya masuk ke jurnal.
-4. Angka hasilnya sama dengan Excel (lihat Bagian 7).
-
-**Belum termasuk:** farm lain (CARIU, GEKBRONG, TALUN), broiler (KOMERSIL), sheet REKAP, HPP DOC, Buku Besar penuh, dan input transaksi harian penuh.
-
-### Isi dokumen
-1. Gambaran Umum
-2. Istilah yang Dipakai
-3. Master Data
-4. Data yang Disimpan
-5. Aturan Hitung CIMANGKOK
-6. Kebutuhan Fungsional
-7. Cara Menguji
-8. Catatan Teknis
-9. Backlog
+### Solusi MVP (Phase 1 Scratch)
+- Memindahkan proses pivot data Odoo ke database SQL yang cepat dan otomatis.
+- Menyediakan antarmuka input grid yang user-friendly (Excel-like experience) untuk populasi ayam Cimangkok (Kolom A-I).
+- Mengotomasi perhitungan Saldo Akhir ($SA$) dan estafet dinamis ke Saldo Awal ($SO$) bulan berikutnya.
+- Menghitung alokasi biaya operasional per kandang dan deplesi secara presisi dengan angka target 100% parity terhadap sheet `CIMANGKOK`.
 
 ---
 
-## 1. Gambaran Umum
+## 2. Scope Management (Prinsip Project Manager: Anti-Scope Creep)
 
-### 1.1 Alur kerja
+Sebagai proyek rintisan (*scratch project*), cakupan harus dijaga ketat agar cepat dirilis (*time-to-market*), stabil, dan bebas *bloatware*, namun dengan arsitektur bersih yang siap diekstensi (*enhancement-ready*).
 
-```mermaid
-flowchart LR
-  A[Import export Odoo: AYAM, PAKAN.VOD, OVK] --> S[(Staging dan validasi)]
-  S --> J[(Jurnal)]
-  M[(Master data)] --> S
-  I[Input manual CIMANGKOK: populasi, pembelian, mutasi, penyesuaian] --> E
-  J --> E[Engine alokasi bulanan]
-  P[(Periode dan parameter)] --> E
-  E --> R[(Hasil alokasi per versi)]
-  E --> JA[Jurnal alokasi dan deplesi]
-  JA --> J
-  R --> V[Tampilan CIMANGKOK dan cek terhadap Excel]
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        SCOPE BOUNDARY PHASE 1 (MVP)                    │
+│                                                                        │
+│   [Feeder Odoo: A-Q]        [Input Cimangkok A-I]     [Engine Alokasi] │
+│   • Import OVK, PAKAN, AYAM  • Grid Input Dinamis     • Bagi biaya SO  │
+│   • Auto-Pivot Aggregation   • SA = SO + In - Out     • Deplesi 9 bln  │
+│   • Stored in journal_detail • Dynamic Month Rollover • Output Parity  │
+└────────────────────────────────────┬───────────────────────────────────┘
+                                     │ (Architecturally Ready)
+                                     ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   DEFERRED TO PHASE 2 (FUTURE ENHANCEMENT)             │
+│   • Farm Lain (Cariu, Gekbrong, Talun)                                │
+│   • Sheet Komersil (Broiler Detail) & HPP DOC Pajak                   │
+│   • Direct API Connector ke Odoo (saat ini tetap via file upload)     │
+│   • Modul Kasir / AP / AR / Invoice Harian Penuh                       │
+│   • Sheet REKAP Multi-Lokasi Konsolidasi                              │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-Penjelasan singkat:
-1. File export Odoo di-upload, dicek, lalu masuk ke jurnal.
-2. Data manual CIMANGKOK diinput di sistem. *bantu crosschek penting enggaknya 
-3. Engine membagi biaya bulanan ke tiap kandang, menghitung deplesi dan mutasi, lalu menyimpan hasilnya per versi.
-4. Hasil final membuat jurnal alokasi dan bisa dibandingkan dengan sheet CIMANGKOK.
+---
 
-### 1.2 Dikerjakan dan ditunda
+## 3. Analisis Alur Data & Formula Matematis (Berdasarkan File Excel)
 
-**Dikerjakan di Phase 1**
-- Import 3 sheet input ke jurnal
-- Master data minimal ( Lihat file Table Sistem Ayam.txt )
-- Input manual data CIMANGKOK
-- Engine alokasi untuk satu farm (CIMANGKOK)
-- Tampilan setara sheet CIMANGKOK dan pengecekan terhadap angka Excel
+### 3.1 Alur 1: Data Tarikan Odoo (Kolom A s/d Q) & Otomasi Pivot
+Ketiga sheet (`OVK`, `PAKAN.VOD`, `AYAM`) memiliki struktur data transaksi buku besar Odoo yang seragam dari Kolom A sampai Q:
 
-**Ditunda ke Phase 2 dan seterusnya**
-- Input transaksi harian penuh dan pembuatan jurnal dari transaksi
-- Buku Besar penuh
-- Sheet REKAP
-- CARIU, GEKBRONG, TALUN
-- KOMERSIL (broiler) dan HPP DOC PAJAK
-- Data Flock sebagai entitas tersendiri
-
-### 1.3 CIMANGKOK mengambil data dari mana?
-
-Hasil pemeriksaan rumus di sheet CIMANGKOK:
-
-| Sumber | Dipakai untuk | Penanganan di Phase 1 |
+| Kolom | Nama Field | Deskripsi & Tipe |
 |---|---|---|
-| `PAKAN.VOD` (48 rumus) | Biaya bulanan: pakan, disinfectant, vaccine, medicines & vitamin | Dihitung dari jurnal hasil import |
-| `AYAM` (12 rumus) | Pembelian ayam per bulan | Dihitung dari jurnal hasil import |
-| `KOMERSIL` (12 rumus, sel `AC55:AC66`) | Mutasi ke kandang lain per bulan | Sheet KOMERSIL ditunda, jadi nilainya diinput manual atau diambil dari Excel |
-| `OVK` | **Tidak dipakai** CIMANGKOK | Tetap di-import ke jurnal, tapi belum dipakai engine |
+| **A** | `BULAN` | Angka bulan transaksi (1 s/d 12) |
+| **B** | `FIELD1` | Status transaksi: `PEMBELIAN` atau `PEMAKAIAN` (default) |
+| **C** | `DIVISI` | Divisi bisnis (contoh: `GPS`, `TIB`) |
+| **D** | `LOKASI` | Akun Analitik / Lokasi Farm (contoh: `Farm Cimangkok`) |
+| **E** | `STATUS` | Status posting Odoo (`posted`) |
+| **F** | `TIPE INTERNAL` | Tipe internal rekening (`other`, dll) |
+| **G** | `REKENING/JENIS` | Klasifikasi jenis (contoh: `Pengeluaran`, `Aktiva Lancar`) |
+| **H** | `NO COA` | Kode akun akuntansi (contoh: `1-130-3`, `5-500-11`) |
+| **I** | `NAMA COA` | Deskripsi akun (contoh: `Persediaan Pakan`, `By. Listrik`) |
+| **J** | `REKANAN/SUPPLIER`| Nama vendor / customer / partner |
+| **K** | `LABEL` | Catatan transaksi / keterangan pengeluaran |
+| **L** | `REFERENSI` | Nomor bukti transaksi lapangan |
+| **M** | `NOMOR` | Nomor dokumen jurnal Odoo |
+| **N** | `TANGGAL` | Tanggal transaksi (YYYY-MM-DD) |
+| **O** | `DEBIT` | Nilai debit transaksi (Rp) |
+| **P** | `KREDIT` | Nilai kredit transaksi (Rp) |
+| **Q** | `MUTASI` | Net mutasi (`DEBIT - KREDIT`) |
 
-Sheet yang memakai hasil CIMANGKOK (REKAP dan HPP DOC PAJAK) ditunda.
+**Otomasi Pivot di Sistem (Tanpa Excel Pivot):**
+Sistem langsung mengagregasi data kolom A-Q ini menggunakan query SQL:
+1. **Pivot PAKAN.VOD (Biaya Operasional Utama Farm Cimangkok):**
+   - Agregasi `SUM(mutasi)` per `bulan` dan `no_coa` untuk `lokasi = 'Farm Cimangkok'` & `field1 = 'PEMAKAIAN'`:
+     - `1-130-3` = Persediaan Pakan
+     - `1-130-4` = Persediaan Disinfectant
+     - `1-130-5` = Persediaan Vaccine
+     - `1-130-6` = Persediaan Medicines & Vitamin
+2. **Pivot AYAM (Pembelian & Mutasi Ekor):**
+   - Agregasi `SUM(mutasi)` per `bulan` untuk `lokasi = 'Farm Cimangkok'` & `field1 = 'PEMBELIAN'`.
+3. **Pivot OVK (Overhead Farm):**
+   - Agregasi `SUM(mutasi)` per `bulan` untuk `lokasi = 'Farm Cimangkok'` pada akun biaya 5-xxx.
 
 ---
 
-## 2. Istilah yang Dipakai
+### 3.2 Alur 2: Sheet CIMANGKOK Kolom A s/d I (Input Populasi & Rollover Dinamis)
+Kolom A sampai I merupakan data fisik populasi ayam per kandang:
 
-| Istilah | Artinya |
-|---|---|
-| **Jurnal** | Catatan akuntansi dengan sisi debit dan kredit yang harus seimbang |
-| **SO** | Jumlah ayam (ekor) di awal bulan. Dipakai sebagai dasar pembagian biaya |
-| **SA** | Kolom SA di Excel, kemungkinan jumlah ayam di akhir bulan (belum dikonfirmasi) |
-| **NBO / NBA** | Saldo awal / saldo akhir. Isinya ekor atau rupiah tergantung kolomnya |
-| **Growing** | Ayam masa pertumbuhan |
-| **Laying** | Ayam masa produksi telur |
-| **DOC** | *Day Old Chick*, anak ayam umur sehari |
-| **Biaya bulanan** | Total biaya yang dibagikan ke kandang (pakan, disinfectant, vaccine, medicines & vitamin) |
-| **Alokasi** | Pembagian biaya bulanan ke tiap kandang |
-| **Deplesi** | Pengurangan nilai ayam laying sedikit demi sedikit tiap bulan |
-| **Mutasi** | Perpindahan ayam atau nilainya ke kandang lain |
-| **Plug** | Angka koreksi yang diketik manual di Excel |
-| **Staging** | Tabel penampung sementara saat import, sebelum masuk jurnal |
-| **Idempotent** | Import file yang sama dua kali tidak menggandakan data |
-| **Parity** | Hasil sistem sama dengan hasil Excel |
+| Kolom | Field | Sifat | Deskripsi |
+|---|---|---|---|
+| **A** | `BULAN` | Sistem / Dropdown | Periode bulan berjalan (1..12) |
+| **B** | `TYPE` | Pilihan Master | Fase Ayam: `AYAM LAYING` atau `AYAM GROWING` |
+| **C** | `KANDANG` | Pilihan Master | Kode Kandang (contoh: `B-CMK/10FL`) |
+| **D** | `FLOCK NO` | Master / Input | Nomor Flock / Strain (contoh: `GPS ROSS`) |
+| **E** | `UMUR MINGGU` | Input / Auto+4 | Umur ayam dalam minggu |
+| **F** | `SO` | **Otomatis** (Bln > 1) | Saldo Awal (Populasi Awal Ekor) |
+| **G** | `In` | **Input User** | Total ayam masuk (DOC masuk / Transfer masuk) |
+| **H** | `Out` | **Input User** | Total ayam keluar (Mati + Jual/Afkir + Mutasi keluar) |
+| **I** | `SA` | **Otomatis Terumus** | Saldo Akhir Populasi (Ekor) |
+
+#### Rumus Kolom I (Saldo Akhir):
+$$SA_{t, k} = SO_{t, k} + In_{t, k} - Out_{t, k}$$
+*Validasi:* $SA$ tidak boleh negatif ($SA \ge 0$). Jika $In$ dan $Out$ kosong, dianggap 0.
+
+#### Aturan Estafet Dinamis Antar Bulan (Month Rollover):
+Untuk menjaga data bergerak terus secara konsisten seiring berjalannya waktu:
+$$SO_{t+1, k} = SA_{t, k}$$
+1. Ketika user membuka/menginput periode baru ($t+1$), nilai $SO$ untuk setiap kandang $k$ **otomatis terisi** dari nilai $SA$ bulan sebelumnya ($t$).
+2. **Dynamic Cascading Update:** Jika user melakukan koreksi input ($In$ atau $Out$) pada bulan $t$, sistem akan otomatis menghitung ulang $SA_t$ dan secara kaskade memperbarui $SO_{t+1}$ pada bulan-bulan berikutnya yang belum ditutup (*locked*).
 
 ---
 
-## 3. Master Data
+### 3.3 Alur 3: Sheet CIMANGKOK Setelah Kolom I (Kolom J s/d W: Engine Biaya & Alokasi)
+Setelah data populasi Kolom A-I lengkap, sistem menjalankan perhitungan biaya:
 
-Master adalah data acuan yang dipakai berulang. Berikut pemetaan dari daftar master yang sudah lo susun.
-
-| Master | Phase 1 | Catatan |
+| Kolom | Label Excel | Formula / Logika Sistem |
 |---|---|---|
-| COA | Ya | Kode berbentuk teks bertingkat, contoh `1-130-9-1`. Perlu diputuskan memakai `1-130-x` (export Odoo) atau `1-131-x` (REKAP) |
-| Mapping jurnal | Disederhanakan | Jurnal import sudah jadi dari Odoo. Mapping hanya untuk jurnal hasil engine (alokasi dan deplesi) |
-| Jurnal header dan detail | Ya | Ada status (draft, posted, reversed) dan sumber (import atau engine) |
-| Customer dan vendor | Ya | Kode unik = nomor NPWP (disimpan hanya angka, tanpa titik dan strip). Cabang tidak dibedakan (lihat catatan di bawah) |
-| Ayam | Disederhanakan | Cukup daftar jenis ayam yang terhubung ke akun persediaan (GPS, PS, Broiler, DOC, jantan atau betina). Growing atau laying adalah fase di baris bulanan, bukan master |
-| Kandang | Ya | Kode unik per lokasi, contoh `B-CMK/10FL` |
-| Lokasi | Ya | Plus daftar alias, contoh `Farm CImangkok` dipetakan ke `Farm Cimangkok` |
-*tambahkan yang belum ada seperti di file Table Sistem Ayam.txt *
-
-**Tambahan minimal:** Divisi (GPS dan TIB), Kategori Operasional (pakan, disinfectant, vaccine, medicines & vitamin, overhead), Periode (open atau closed), dan Parameter (contoh: masa deplesi).
-
-**Soal NPWP sebagai kode unik:** kode partner diambil dari NPWP dan cabang tidak dibedakan. Di export Odoo satu NPWP bisa muncul dengan beberapa nama rekanan (di data ada 3 grup NPWP dengan total 9 nama rekanan, misalnya `PT INTERTAMA TRIKENCANA BERSINAR` dengan akhiran CIJANGKAR, CIPANAS, KPA 1, dan TANJUNG). Semua nama itu didaftarkan sebagai alias dari satu partner, jadi saat import tidak membuat partner baru. Rekanan yang tidak punya NPWP perlu aturan tersendiri (lihat pertanyaan 7 di Bagian 5).
-*dibuat tetap 1 nama rekanan 1 NPWP meskipun banyak cabang*
+| **J** | `NBO AYAM` | **Nilai Buku Awal (Rp):** Bulan 1 dari Saldo Awal Master; Bulan $t > 1$ mengambil `NBA AYAM` (Kolom P) bulan sebelumnya. |
+| **K** | `NBO AYAM DP` | **Nilai Buku Deplesi Awal (Rp):** Bulan $t > 1$ mengambil `NBA AYAM DP` (Kolom U) bulan sebelumnya. |
+| **L** | `ALOKASI BIAYA` | **Alokasi Biaya Bulanan (Rp):**<br>$$\text{Alokasi}_k = \text{ROUND}\left( \frac{\text{Total Biaya Operasional Bulan Ini}}{\sum SO_{\text{semua kandang}}} \times SO_k + \text{Penyesuaian Plug}_k, 0 \right)$$<br>*Total Biaya Operasional diambil dari Pivot PAKAN.VOD (Pakan, Disinfektan, Vaksin, Meds).* |
+| **M** | `MATI` | Proporsi nilai rupiah ayam yang mati. |
+| **N** | `JUAL` | Nilai rupiah ayam afkir/dijual. |
+| **O** | `KOREKSI/MUTASI`| Penyesuaian nilai mutasi/koreksi buku. |
+| **P** | `NBA AYAM` | **Nilai Buku Akhir Sebelum Deplesi (Rp):**<br>$$P = J - M - N - O$$ |
+| **Q** | `BIAYA` | Akumulasi biaya untuk ayam growing (fase pembesaran). |
+| **R** | `UMUR DEPRESI` | Sisa masa deplesi ayam laying (default: 9 bulan, atau parameter). |
+| **S** | `DEPLESI` | **Biaya Deplesi Bulan Ini (Rp):**<br>- Untuk Laying: $$\frac{P}{R}$$ (NBA Ayam dibagi 9)<br>- Untuk Growing: $$0$$ |
+| **T** | `Mutasi` | Nilai rupiah mutasi ayam growing yang naik ke laying. |
+| **U** | `NBA AYAM DP` | **Nilai Buku Deplesi Akhir (Rp):** Akumulasi deplesi berjalan. |
+| **W** | `TOTAL` | Total biaya terpakai ($L + M + N + O + S$). |
 
 ---
 
-## 4. Data yang Disimpan
+## 4. Koreksi & Rasionalisasi Tabel Database
 
-| Kelompok | Tabel | Isi |
+Berdasarkan draf manual di file `Table Sistem Ayam.txt` dan evaluasi struktur PRD lama (17 tabel):
+
+```
+Table Sistem Ayam.txt (Manual User):
+1: modul master journal detail
+2: modul master ayam ( laying , growing, broiler, doc -> day of chicken )
+3: modul master kandang
+4: modul master lokasi 
+5: modul transaksi ayam 
+```
+
+### 4.1 Tabel yang Dihilangkan / Disederhanakan (Anti-Overengineering)
+| Tabel PRD Lama | Status | Alasan Rasionalisasi PM |
 |---|---|---|
-| Master | `coa`, `divisi`, `lokasi`, `lokasi_alias`, `kandang`, `partner`, `partner_alias`, `kategori_operasional`, `jenis_ayam` | Data acuan (Bagian 3) |
-| Periode | `periode`, `parameter_hpp` | Bulan buka atau tutup, dan nilai parameter seperti masa deplesi |
-| Import | `import_batch`, `import_row` | File sumber, jumlah baris, status, error per baris |
-| Jurnal | `jurnal_header`, `jurnal_detail` | Nomor, tanggal, akun, debit, kredit, lokasi, divisi, kandang, partner |
-| Input CIMANGKOK | `populasi_bulanan` | Per bulan dan kandang: fase, strain, umur minggu, SO, SA, mati, jual, koreksi |
-| | `input_alokasi` | Pembelian ayam, mutasi, dan penyesuaian, lengkap dengan alasan dan pembuat |
-| Hasil | `alokasi_run`, `alokasi_baris` | Hasil hitung per versi (draft atau final), kolom setara CIMANGKOK |
-| Sistem | `audit_log` | Siapa mengubah apa dan kapan |
-*tambahkan yang belum ada seperti di file Table Sistem Ayam.txt *
-
-**Aturan data**
-- Uang memakai `NUMERIC(20,2)`, jumlah ayam memakai bilangan bulat.
-- Tidak ada hapus permanen pada jurnal. Koreksi dilakukan dengan jurnal pembalik.
-- Zona waktu Asia/Jakarta.
-
-**Kolom di 3 sheet input (sama semuanya):** bulan, FIELD1 (PEMBELIAN, kosong berarti PEMAKAIAN), divisi, lokasi, status, tipe, jenis, kode COA, nama COA, rekanan, label, referensi, nomor, tanggal, debit, kredit, mutasi.
-
-**Hal yang harus ditangani saat import**
-- Di sheet AYAM, baris mati/jual berisi **jumlah ekor**, sedangkan baris pembelian berisi **rupiah**, dalam kolom yang sama. Baris mati/jual juga tidak punya lokasi. Keduanya harus dipisah. Mati/jual per kandang tetap diinput di `populasi_bulanan`.
-- Nama tidak konsisten: `Farm CImangkok` (1.568 baris), `TALUN 2`, dan `ANUGERAH` vs `ANUGRAH`.
-- Kolom `STATUS` kosong: 18 baris di PAKAN.VOD dan 6 baris di OVK (di OVK, lokasi dan bulan juga kosong).
+| `partner_alias` | **Dihilangkan** | Untuk MVP scratch, nama rekanan cukup disimpan sebagai teks asli dari Odoo. Normalisasi alias NPWP cabang ditunda ke Phase 2. |
+| `lokasi_alias` | **Dihilangkan** | Nama lokasi farm distandarisasi saat import lewat script mapping sederhana, tidak perlu tabel alias dinamis tersendiri. |
+| `import_row` (Staging) | **Dihilangkan** | Membengkakkan DB (80.000+ baris diduplikasi). Data file langsung divalidasi dan diinsert ke tabel `journal_detail` (terhubung ke `journal_header`) dengan penanda `batch_id`. |
+| `parameter_hpp` | **Disederhanakan** | Parameter seperti masa deplesi (9 bulan) dijadikan kolom konfigurasi di tabel periode, tidak perlu tabel abstraction terpisah. |
+| `journal_header` | **Dihilangkan** | Data Odoo sudah memiliki nomor dokumen dan tanggal di tiap baris. Menghilangkan header membuat import 80.000 baris jauh lebih cepat (1x bulk insert langsung) dan query auto-pivot tanpa perlu JOIN. |
+| `journal_detail` | **Dipertahankan (Tabel Tunggal)** | Menampung seluruh baris transaksi Odoo (Kolom A-Q) sebagai detail jurnal masuk, sekaligus menampung baris jurnal alokasi & deplesi hasil engine. |
 
 ---
 
-## 5. Aturan Hitung CIMANGKOK
+### 4.2 Skema Tabel Final Phase 1 (7 Tabel Inti + 1 Tabel Kontrol)
 
-Aturan ini dibaca dari rumus Excel, jadi **perlu dikonfirmasi pemilik Excel** sebelum engine dibuat.
+#### 1. `master_lokasi`
+Menyimpan lokasi farm.
+- `id` (PK, UUID / Serial)
+- `kode_lokasi` (VARCHAR, contoh: `F-CMK`)
+- `nama_lokasi` (VARCHAR, contoh: `Farm Cimangkok`)
+- `is_active` (BOOLEAN, default: true)
 
-| No | Aturan dalam bahasa sederhana | Sel di Excel |
-|---|---|---|
-| 1 | Biaya bulanan dibagi ke tiap kandang sesuai SO. Rumus: biaya bulan ÷ total SO bulan × SO kandang | `J8` |
-| 2 | Biaya bulanan = total pemakaian pakan, disinfectant, vaccine, dan medicines & vitamin dari PAKAN.VOD | `AJ8:AL55`, `AH` |
-| 3 | Ada koreksi manual "ALOKASI BIAYA" per bulan (angka diketik, bisa plus atau minus). Koreksi ini hanya masuk ke ayam laying, tidak ke growing | `AL56:AL67`, `J20` |
-| 4 | Ayam growing: biaya terkumpul = nilai awal + alokasi bulan ini. Sisa = biaya terkumpul dikurangi mutasi | `O20`, `S20` |
-| 5 | Mutasi dibagi ke kandang penerima sesuai SO. Kandang penerima ditentukan manual lewat rentang `SUM` yang berbeda tiap bulan | `R33`, `AN:AP` |
-| 6 | Deplesi ayam laying = nilai ÷ 9, tiap bulan. Angka 9 diketik langsung di rumus | `Q33` |
-| 7 | Jumlah ayam akhir = awal dikurangi mati, jual, dan koreksi. Hasilnya jadi jumlah awal bulan berikutnya | `N8`, `H24` |
-| 8 | Saldo akhir = saldo awal + pembelian + alokasi − deplesi − jual − mutasi | sheet REKAP |
+#### 2. `master_kandang`
+Menyimpan data kandang fisik per lokasi.
+- `id` (PK)
+- `lokasi_id` (FK -> `master_lokasi.id`)
+- `kode_kandang` (VARCHAR, contoh: `B-CMK/10FL`, `B-CMK/1FL (A)`)
+- `kapasitas` (INTEGER, nullable)
+- `is_active` (BOOLEAN, default: true)
 
-### Prinsip penyesuaian manual
-Setiap penyesuaian, termasuk pengganti plug di aturan 3, disimpan sebagai **entri tersendiri** di `input_alokasi` dengan nilai, alasan, user, dan waktu. Penyesuaian tidak menimpa data import dan selalu bisa ditelusuri ke data Odoo.
+#### 3. `master_ayam`
+Sesuai baris 2 `Table Sistem Ayam.txt` (laying, growing, broiler, doc):
+- `id` (PK)
+- `kode_fase` (VARCHAR: `DOC`, `GROWING`, `LAYING`, `BROILER`)
+- `nama_fase` (VARCHAR, contoh: `Ayam Laying (Masa Produksi)`, `Ayam Growing (Masa Pertumbuhan)`)
+- `default_umur_deplesi` (INTEGER, default: 9 untuk laying, 0 untuk growing)
+- `coa_persediaan` (VARCHAR, contoh: `1-130-1`)
 
-### Pertanyaan untuk pemilik Excel
-1. Dari mana angka koreksi di aturan 3 berasal, dan siapa yang menyetujui?
-2. Bagaimana aturan memilih kandang penerima mutasi tiap bulan (aturan 5)?
-3. Apa arti persis SO, SA, NBO, NBA? Kolom SA berisi angka pecahan (misalnya 2.792,91), dan sambungan SO antar bulan tidak konsisten (`F40 = H24`, sedangkan `F24 = G8` dan `F56 = G40`).
-4. Apakah masa deplesi selalu 9 bulan, atau berbeda per jenis ayam?
-5. Kode COA mana yang dipakai: `1-130-x` atau `1-131-x`?
-6. Apa arti kode kandang `FL`, `ML`, `(A)`, `(B)`? Kolom "FLOCK NO" di Excel isinya `GPS ROSS` (strain), bukan nomor flock.
-7. Bagaimana kode partner untuk rekanan yang tidak punya NPWP, misalnya perorangan?
+#### 4. `master_coa_mapping`
+Pemetaan akun Odoo ke kategori operasional pakan & alokasi:
+- `id` (PK)
+- `kode_coa` (VARCHAR, contoh: `1-130-3`, `1-130-4`, `5-500-11`)
+- `nama_coa` (VARCHAR)
+- `kategori` (ENUM: `PAKAN`, `DISINFECTANT`, `VACCINE`, `MEDICINE`, `OVERHEAD_OVK`, `PEMBELIAN_AYAM`)
+
+#### 5. `journal_detail` (Tabel Transaksi Penampung Odoo Kolom A-Q & Alokasi Engine)
+Sesuai baris 1 `Table Sistem Ayam.txt` (`modul master journal detail`), menampung seluruh baris transaksi dari sheet `OVK`, `PAKAN.VOD`, dan `AYAM` (Kolom A s/d Q) secara langsung tanpa perlu tabel header, serta menampung baris jurnal pembebanan alokasi:
+- `id` (BIGINT PK)
+- `import_batch_id` (UUID, untuk tracking batch file upload & idempotency)
+- `sumber` (ENUM: `IMPORT_ODOO`, `ENGINE_ALOKASI`)
+- `sheet_sumber` (VARCHAR, nullable: `PAKAN.VOD`, `AYAM`, `OVK`)
+- `bulan` (SMALLINT, 1..12)
+- `field1` (VARCHAR: `PEMBELIAN`, `PEMAKAIAN`)
+- `divisi` (VARCHAR: `GPS`, `TIB`)
+- `lokasi_id` (FK -> `master_lokasi.id`, nullable)
+- `lokasi_raw` (VARCHAR: `Farm Cimangkok`, dll)
+- `kandang_id` (FK -> `master_kandang.id`, nullable)
+- `status` (VARCHAR: `posted`)
+- `tipe_internal` (VARCHAR, nullable)
+- `rekening_jenis` (VARCHAR, nullable)
+- `kode_coa` (VARCHAR)
+- `nama_coa` (VARCHAR)
+- `rekanan` (VARCHAR, nullable)
+- `label` (TEXT, nullable)
+- `referensi` (VARCHAR, nullable)
+- `nomor` (VARCHAR, nullable) — nomor bukti transaksi / dokumen Odoo
+- `tanggal` (DATE)
+- `debit` (NUMERIC(20,2))
+- `kredit` (NUMERIC(20,2))
+- `mutasi` (NUMERIC(20,2))
+- *Index:* `(bulan, lokasi_raw, kode_coa)`, `(sheet_sumber, bulan)`, `(import_batch_id)`
+
+#### 6. `transaksi_ayam_bulanan` (Sesuai Kolom A s/d I Sheet CIMANGKOK)
+Sesuai baris 5 `Table Sistem Ayam.txt`:
+- `id` (PK)
+- `periode_id` (FK -> `periode_closing.id`)
+- `kandang_id` (FK -> `master_kandang.id`)
+- `master_ayam_id` (FK -> `master_ayam.id`)
+- `flock_no` (VARCHAR, default: `GPS ROSS`)
+- `umur_minggu` (INTEGER)
+- `so_ekor` (INTEGER) — Saldo Awal (Auto dari SA bulan lalu)
+- `in_ekor` (INTEGER, default: 0) — Input User (Ayam Masuk)
+- `out_ekor` (INTEGER, default: 0) — Input User (Ayam Keluar: Mati/Jual/Mutasi)
+- `sa_ekor` (INTEGER) — **Auto Generated:** $SO + In - Out$
+- `mati_ekor` (INTEGER, default: 0) — Breakdown Out
+- `jual_ekor` (INTEGER, default: 0) — Breakdown Out
+- `koreksi_ekor` (INTEGER, default: 0) — Breakdown Out
+- *Constraint:* Unique `(periode_id, kandang_id)`
+
+#### 7. `alokasi_biaya_kandang` (Sesuai Kolom J s/d W Sheet CIMANGKOK)
+Hasil engine alokasi biaya:
+- `id` (PK)
+- `transaksi_ayam_id` (FK -> `transaksi_ayam_bulanan.id`)
+- `nbo_ayam` (NUMERIC(20,2)) — Nilai Buku Awal
+- `nbo_ayam_dp` (NUMERIC(20,2)) — Nilai Buku Awal Deplesi
+- `alokasi_biaya` (NUMERIC(20,2)) — Proporsi Biaya Operasional
+- `koreksi_alokasi` (NUMERIC(20,2), default: 0) — Plug manual jika ada
+- `mati_rupiah` (NUMERIC(20,2))
+- `jual_rupiah` (NUMERIC(20,2))
+- `mutasi_koreksi_rupiah` (NUMERIC(20,2))
+- `nba_ayam` (NUMERIC(20,2)) — Nilai Buku Akhir sebelum Deplesi
+- `umur_deplesi` (SMALLINT, default: 9)
+- `deplesi_rupiah` (NUMERIC(20,2)) — Beban deplesi bulan ini
+- `nba_ayam_dp` (NUMERIC(20,2)) — Nilai Buku Akhir Deplesi
+- `status_perhitungan` (ENUM: `DRAFT`, `FINAL`)
+
+#### 8. `periode_closing`
+Tabel kontrol bulan transaksi:
+- `id` (PK)
+- `tahun` (INTEGER)
+- `bulan` (SMALLINT, 1..12)
+- `status` (ENUM: `OPEN`, `CALCULATED`, `LOCKED`)
+- `total_biaya_operasional` (NUMERIC(20,2))
+- `locked_at` (TIMESTAMP, nullable)
+- `locked_by` (VARCHAR, nullable)
 
 ---
 
-## 6. Kebutuhan Fungsional
+## 5. UI/UX Design System & Page Architecture (Perspektif UI/UX Designer)
 
-Semua kebutuhan di bawah wajib untuk Phase 1.
+Sebagai UI/UX Designer, antarmuka dirancang khusus untuk meminimalkan beban kognitif akuntan dan operasional farm, dengan visual yang bersih, modern, dan fungsional.
 
-| No | Kebutuhan | Dianggap selesai jika |
-|---|---|---|
-| 1 | Kelola master data dan alias lokasi/partner | Kode tidak boleh ganda. Master yang sudah dipakai hanya bisa dinonaktifkan |
-| 2 | Upload export Odoo (xlsx atau csv), cek, lalu masuk ke jurnal | Upload ulang tidak menggandakan data. Error tampil per baris. Jumlah baris, total debit, dan total kredit sama dengan file |
-| 3 | Import 83 ribu baris lewat proses latar belakang | AYAM 14.134 baris, PAKAN.VOD 57.412 baris, OVK 11.380 baris selesai tanpa timeout |
-| 4 | Input populasi dan penyesuaian alokasi (grid, bisa paste dari Excel) | Populasi tidak boleh minus. Periode yang sudah ditutup tidak bisa diubah |
-| 5 | Engine alokasi CIMANGKOK sesuai aturan 1 sampai 8, memakai parameter, bukan angka yang diketik di rumus | Pembulatan sama dengan `ROUND(x,0)` Excel. Sisa pembulatan masuk ke baris terakhir |
-| 6 | Hasil hitung disimpan per versi (draft atau final). Versi final membuat jurnal dan mengunci periode | Hitung ulang dengan input sama menghasilkan angka yang sama |
-| 7 | Tampilan CIMANGKOK: tabel utama (kolom A sampai V), ringkasan bulanan (X:AC), rekap mati/jual/alokasi (AE:AH), biaya bulanan (AJ:AL), pembelian dan mutasi (AN:AP), plus export Excel | Bisa dibandingkan dengan sheet, baris per baris dan blok per blok |
-| 8 | Panel kontrol | Selisih alokasi terhadap biaya bulanan, jurnal tidak seimbang, dan error import terlihat jelas |
-| 9 | Login, hak akses (admin, akuntansi, viewer), dan audit log | Semua perubahan tercatat |
+### 5.1 Jumlah & Struktur Halaman (4 Core Pages + 1 Master Modal)
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                              TOP NAVIGATION BAR                        │
+│   🐔 PakanCost Engine   [Farm Cimangkok ▼]  [Bulan: Jan 2026 ▼]  [🔒] │
+└────────────────────────────────────────────────────────────────────────┘
+  │
+  ├─► [PAGE 1: Dashboard & Rekonsiliasi] (Ringkasan KPI, Selisih Rp 0, Health Check)
+  │
+  ├─► [PAGE 2: Odoo Feeder Hub] (Upload 3 Sheet, Auto-Pivot Viewer, Validasi)
+  │
+  ├─► [PAGE 3: Input Populasi Ayam] (Spreadsheet Grid A-I, Auto-SA, Paste Excel)
+  │
+  ├─► [PAGE 4: Lembar Alokasi & Deplesi] (Grid Kolom J-W, Run Engine, Export Excel)
+  │
+  └─► [MODAL / DRAWER: Master Settings] (Lokasi, Kandang, Master Ayam, COA Mapping)
+```
 
 ---
 
-## 7. Cara Menguji
+### 5.2 Rincian Desain & Pengalaman Pengguna (UX Experience)
 
-Pembanding: sheet CIMANGKOK periode Januari sampai September 2026 (angkanya sama dengan REKAP). Selisih yang ditoleransi sementara maksimal Rp 1 per baris karena pembulatan, dan akan disepakati ulang setelah pertanyaan 1 sampai 4 di Bagian 5 terjawab.
+#### Page 1: Dashboard & Status Rekonsiliasi
+- **Tujuan:** Memberikan gambaran kilat status kesehatan alokasi bulan aktif kepada manajemen dan akuntan.
+- **Komponen Utama:**
+  1. **Status Banner:** Status Periode (`OPEN` / `CALCULATED` / `LOCKED`). Tombol *Lock Period* untuk mencegah perubahan data bulan lampau.
+  2. **4 KPI Stat Cards:**
+     - Total Populasi ($SO$, $In$, $Out$, $SA$ total ekor).
+     - Total Biaya Operasional (Pakan + Disinfektan + Vaksin + Meds dari tarikan Odoo).
+     - Total Alokasi Biaya Terdistribusi (Rp) vs Biaya Sumber (dengan badge hijau `MATCH (Selisih Rp 0)` atau merah jika ada selisih).
+     - Total Beban Deplesi Bulan Berjalan.
+  3. **Visual Parity Checker:** Tabel komparasi saldo awal, pembelian, alokasi, deplesi, dan saldo akhir.
 
-| Komponen | Target (Rp) |
+#### Page 2: Odoo Feeder & Auto-Pivot Hub
+- **Tujuan:** Pengunggahan data tarikan Odoo Kolom A-Q tanpa pusing membuka file raksasa.
+- **UX Flow:**
+  1. **Unified Drag & Drop Upload Zone:** Bisa drag 1 workbook Excel berisi 3 sheet (`OVK`, `PAKAN.VOD`, `AYAM`) atau upload terpisah.
+  2. **Background Processing with Progress Bar:** Menampilkan progress bar saat membaca 80.000+ baris data tanpa browser hang.
+  3. **Auto-Pivot Interactive View:** Menampilkan hasil agregasi pivot otomatis dalam bentuk kartu/tabel ringkas:
+     - Biaya Pakan (1-130-3), Disinfektan (1-130-4), Vaksin (1-130-5), Obat (1-130-6).
+     - Nilai Pembelian Ayam & Overhead OVK.
+  4. **Data Grid Viewer:** Dilengkapi filter pencarian COA, tanggal, dan nilai mutasi.
+
+#### Page 3: Input Populasi Ayam (Spreadsheet Grid Kolom A s/d I)
+- **Tujuan:** Tempat user memasukkan data ayam masuk dan keluar per kandang dengan rasa familiar seperti Excel.
+- **UX Highlights:**
+  1. **Excel-like Data Grid (TanStack Table):** Mendukung navigasi panah keyboard (*Arrow Keys*), Enter untuk pindah baris, dan Tab.
+  2. **Clipboard Paste Integration:** User bisa langsung meng-copy range kolom dari Excel dan menekan **Ctrl+V** di grid web.
+  3. **Real-time Automatic SA:** Kolom $SA$ otomatis berubah warna secara instan saat kolom $In$ atau $Out$ diketik ($SA = SO + In - Out$).
+  4. **Visual Indicator Rollover:** Kolom $SO$ memiliki ikon gembok kecil bertuliskan *"Auto from Month [t-1]"* untuk memberi tahu user bahwa nilai berasal dari saldo akhir bulan lalu.
+
+#### Page 4: Lembar Alokasi Biaya & Deplesi (Kolom J s/d W)
+- **Tujuan:** Menampilkan hasil hitungan biaya per kandang setara sheet `CIMANGKOK`.
+- **UX Highlights:**
+  1. **Floating Action Bar:**
+     - Tombol `[ ⚡ Hitung Alokasi Biaya ]` (Run Engine).
+     - Tombol `[ 📥 Export Sheet CIMANGKOK (.xlsx) ]` (menghasilkan file Excel dengan format dan styling identik aslinya).
+     - Tombol `[ ✏️ Koreksi Manual / Plug ]` (dengan modal pencatatan alasan untuk audit trail).
+  2. **Color-Coded Column Groups:**
+     - Header Hijau: Data Populasi Ekor ($SO$, $SA$).
+     - Header Biru: Alokasi Biaya Masuk ($NBO$, Alokasi Pakan/OVK).
+     - Header Oranye: Pengurang Nilai (Mati, Jual, Mutasi).
+     - Header Ungu: Deplesi & Nilai Buku Akhir ($NBA$, $NBA DP$).
+  3. **Summary Sticky Footer:** Baris total di bagian bawah selalu terlihat (*sticky footer*) saat scroll.
+
+---
+
+## 6. Target Verifikasi & Parity Pengecekan
+
+Hasil perhitungan sistem pada Phase 1 wajib menghasilkan angka yang sama persis (selisih pembulatan $\le \text{Rp } 1$) dengan target Excel periode Januari s/d September 2026:
+
+| Komponen Alokasi | Target Angka Excel (Rp) |
 |---|---:|
-| Saldo awal | 19.854.133.334 |
-| Pembelian | 19.404.844.246 |
-| Alokasi | 8.432.860.168 |
-| Deplesi | 16.269.355.406 |
-| Jual | 5.177.294.499 |
-| Mutasi | 589.593.610 |
-| **Saldo akhir** | **25.655.594.233** |
+| **Saldo Awal** | 19.854.133.334 |
+| **Pembelian Ayam** | 19.404.844.246 |
+| **Alokasi Biaya (Pakan & OVK)** | 8.432.860.168 |
+| **Deplesi** | (16.269.355.406) |
+| **Jual / Afkir** | (5.177.294.499) |
+| **Mutasi** | (589.593.610) |
+| **Saldo Akhir Populasi (Net)** | **25.655.594.233** |
 
-Pengecekan: 19.854.133.334 + 19.404.844.246 + 8.432.860.168 − 16.269.355.406 − 5.177.294.499 − 589.593.610 = 25.655.594.233.
-
----
-
-## 8. Catatan Teknis
-
-- **Laravel:** import dan engine ditaruh di service terpisah dan dijalankan lewat queue. Migrasi database dikelola di repo, bukan lewat dashboard Supabase.
-- **React + TypeScript:** usulan TanStack Query, TanStack Table (cocok untuk grid besar), serta React Hook Form dan Zod.
-- **Login:** pilih satu saja, Laravel Sanctum atau Supabase Auth.
-- **Supabase** (cek dokumentasi terbaru sebelum setup):
-  - Tabel di schema `public` bisa terbuka lewat REST bawaan Supabase. Aktifkan RLS dengan kebijakan tolak semua, atau pindahkan tabel ke schema yang tidak di-expose.
-  - Transaction pooler tidak mendukung prepared statement yang dipakai Laravel. Pakai koneksi direct atau session pooler.
-  - Hindari fitur khusus Supabase supaya mudah pindah ke Postgres lain.
+*Persamaan Keseimbangan:*
+$$\text{Saldo Akhir} = 19.854.133.334 + 19.404.844.246 + 8.432.860.168 - 16.269.355.406 - 5.177.294.499 - 589.593.610 = 25.655.594.233$$
 
 ---
 
-## 9. Backlog
+## 7. Roadmap Pelaksanaan MVP & Milestone
 
-Ukuran kasar untuk 1 developer: **S** sekitar 1 hari, **M** sekitar 2 sampai 3 hari, **L** sekitar 4 sampai 6 hari.
-Urutan pengerjaan: M0, M1, M2, M3, M4, M5.
-
-### M0: Setup
-- [ ] **M0-01** Repo Laravel API dan React TS (Vite), plus CI `S`
-- [ ] **M0-02** Koneksi Supabase Postgres (direct atau session) dan migrasi awal `S`
-- [ ] **M0-03** Pengamanan Supabase (RLS atau schema tidak di-expose) `S`
-- [ ] **M0-04** Login, hak akses, dan audit log `M`
-
-### M1: Master
-- [ ] **M1-01** COA dan import CSV `M`
-- [ ] **M1-02** Divisi, Lokasi (plus alias), Kandang `M`
-- [ ] **M1-03** Partner (kode dari NPWP, cabang tidak dibedakan, alias nama rekanan) `M`
-- [ ] **M1-04** Kategori Operasional dan Jenis Ayam `S`
-- [ ] **M1-05** Periode dan Parameter `S`
-- [ ] **M1-06** Seeder dari Excel (COA, lokasi, divisi, kandang CIMANGKOK) `S`
-
-### M2: Import ke Jurnal
-- [ ] **M2-01** Tabel jurnal header dan detail dengan aturan (debit atau kredit, tidak boleh minus) `M`
-- [ ] **M2-02** Upload ke staging lewat queue `L`
-- [ ] **M2-03** Validasi, normalisasi, dan laporan error per baris `M`
-- [ ] **M2-04** Pindahkan staging ke jurnal tanpa menggandakan data `M`
-- [ ] **M2-05** Rekonsiliasi import dan daftar jurnal `S`
-
-### M3: Input Data CIMANGKOK
-- [ ] **M3-01** Input `populasi_bulanan` (grid, bisa paste dari Excel) `M`
-- [ ] **M3-02** Input `input_alokasi` (pembelian, mutasi, penyesuaian, lengkap dengan alasan) `M`
-- [ ] **M3-03** Import awal populasi dari sheet CIMANGKOK dan nilai mutasi dari `KOMERSIL!AC55:AC66` `S`
-
-### M4: Engine
-- [ ] **M4-01** Biaya bulanan per lokasi (aturan 2) `M`
-- [ ] **M4-02** Alokasi sesuai SO (aturan 1 dan 3) `L`
-- [ ] **M4-03** Mutasi dan pembelian dengan kandang penerima yang jelas (aturan 5) `L`
-- [ ] **M4-04** Deplesi dan jumlah ayam akhir (aturan 6 dan 7) `M`
-- [ ] **M4-05** Hasil per versi, jurnal alokasi dan deplesi, serta kunci periode (aturan 8) `L`
-- [ ] **M4-06** Tes otomatis terhadap angka di Bagian 7 `L`
-
-### M5: Tampilan
-- [ ] **M5-01** Tampilan CIMANGKOK (kolom sama dengan Excel) `L`
-- [ ] **M5-02** Export Excel dan CSV `S`
-- [ ] **M5-03** Panel kontrol `S`
-
-### Phase 2 dan seterusnya
-- [ ] Input transaksi harian penuh dan pembuatan jurnal dari transaksi
-- [ ] Buku Besar dan REKAP
-- [ ] CARIU, GEKBRONG, TALUN (memakai engine yang sama)
-- [ ] KOMERSIL (broiler) dan HPP DOC PAJAK
-- [ ] Data Flock sebagai entitas tersendiri
-
-### Syarat selesai tiap issue
-- Kode sudah di-review dan test lulus di CI.
-- Migrasi bisa dijalankan dari database kosong.
-- Issue engine dan tampilan lulus tes terhadap angka di Bagian 7.
-- Perubahan data tercatat di audit log.
+| Milestone | Durasi Estimasi | Deliverables |
+|---|---|---|
+| **M0: Project Setup & Schema DB** | 2 Hari | Migrasi 7 Tabel Inti + 1 Kontrol, Setup Laravel API & React Vite. |
+| **M1: Odoo Feeder & Auto-Pivot** | 3 Hari | Upload file Excel/CSV Kolom A-Q, Queue Import, Auto-Pivot Query SQL. |
+| **M2: Input Grid Populasi (A-I)** | 3 Hari | Spreadsheet Grid, Rumus $SA = SO + In - Out$, Estafet $SO$ Antar Bulan, Paste Excel. |
+| **M3: Allocation & Depletion Engine** | 4 Hari | Formula Kolom J-W, Alokasi proporsional $SO$, Deplesi 9 bulan, Test Parity 100%. |
+| **M4: UI/UX Finishing & Excel Export** | 3 Hari | Dashboard Rekonsiliasi, Export Excel setara aslinya, Lock Period. |
+| **Total Estimasi MVP** | **15 Hari Kerja** | **Ready for UAT & Operational Run** |
