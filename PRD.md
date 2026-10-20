@@ -39,7 +39,7 @@ Sebagai proyek rintisan (*scratch project*), cakupan harus dijaga ketat agar cep
 │   [Feeder Odoo: A-Q]        [Input Cimangkok A-I]     [Engine Alokasi] │
 │   • Import OVK, PAKAN, AYAM  • Grid Input Dinamis     • Bagi biaya SO  │
 │   • Auto-Pivot Aggregation   • SA = SO + In - Out     • Deplesi 9 bln  │
-│   • Stored in GL DB          • Dynamic Month Rollover • Output Parity  │
+│   • Stored in journal_detail • Dynamic Month Rollover • Output Parity  │
 └────────────────────────────────────┬───────────────────────────────────┘
                                      │ (Architecturally Ready)
                                      ▼
@@ -161,9 +161,10 @@ Table Sistem Ayam.txt (Manual User):
 |---|---|---|
 | `partner_alias` | **Dihilangkan** | Untuk MVP scratch, nama rekanan cukup disimpan sebagai teks asli dari Odoo. Normalisasi alias NPWP cabang ditunda ke Phase 2. |
 | `lokasi_alias` | **Dihilangkan** | Nama lokasi farm distandarisasi saat import lewat script mapping sederhana, tidak perlu tabel alias dinamis tersendiri. |
-| `import_row` (Staging) | **Dihilangkan** | Membengkakkan DB (80.000+ baris diduplikasi). Data file langsung divalidasi dan diinsert ke tabel `general_ledger` dengan penanda `batch_id`. |
+| `import_row` (Staging) | **Dihilangkan** | Membengkakkan DB (80.000+ baris diduplikasi). Data file langsung divalidasi dan diinsert ke tabel `journal_detail` (terhubung ke `journal_header`) dengan penanda `batch_id`. |
 | `parameter_hpp` | **Disederhanakan** | Parameter seperti masa deplesi (9 bulan) dijadikan kolom konfigurasi di tabel periode, tidak perlu tabel abstraction terpisah. |
-| `jurnal_header` & `jurnal_detail` | **Disatukan** | Data Odoo yang diimport adalah baris transaksi buku besar (Kolom A-Q). Menggunakan tabel `general_ledger` jauh lebih cepat dan mudah di-pivot daripada header-detail yang terpecah. |
+| `journal_header` | **Dihilangkan** | Data Odoo sudah memiliki nomor dokumen dan tanggal di tiap baris. Menghilangkan header membuat import 80.000 baris jauh lebih cepat (1x bulk insert langsung) dan query auto-pivot tanpa perlu JOIN. |
+| `journal_detail` | **Dipertahankan (Tabel Tunggal)** | Menampung seluruh baris transaksi Odoo (Kolom A-Q) sebagai detail jurnal masuk, sekaligus menampung baris jurnal alokasi & deplesi hasil engine. |
 
 ---
 
@@ -199,27 +200,32 @@ Pemetaan akun Odoo ke kategori operasional pakan & alokasi:
 - `nama_coa` (VARCHAR)
 - `kategori` (ENUM: `PAKAN`, `DISINFECTANT`, `VACCINE`, `MEDICINE`, `OVERHEAD_OVK`, `PEMBELIAN_AYAM`)
 
-#### 5. `general_ledger` (Tarikan Data Odoo Kolom A s/d Q)
-Menampung seluruh data mentah dari sheet `OVK`, `PAKAN.VOD`, dan `AYAM`:
+#### 5. `journal_detail` (Tabel Transaksi Penampung Odoo Kolom A-Q & Alokasi Engine)
+Sesuai baris 1 `Table Sistem Ayam.txt` (`modul master journal detail`), menampung seluruh baris transaksi dari sheet `OVK`, `PAKAN.VOD`, dan `AYAM` (Kolom A s/d Q) secara langsung tanpa perlu tabel header, serta menampung baris jurnal pembebanan alokasi:
 - `id` (BIGINT PK)
-- `import_batch_id` (UUID, untuk tracking file & idempotency)
-- `sheet_sumber` (VARCHAR: `PAKAN.VOD`, `AYAM`, `OVK`)
+- `import_batch_id` (UUID, untuk tracking batch file upload & idempotency)
+- `sumber` (ENUM: `IMPORT_ODOO`, `ENGINE_ALOKASI`)
+- `sheet_sumber` (VARCHAR, nullable: `PAKAN.VOD`, `AYAM`, `OVK`)
 - `bulan` (SMALLINT, 1..12)
 - `field1` (VARCHAR: `PEMBELIAN`, `PEMAKAIAN`)
-- `divisi` (VARCHAR)
+- `divisi` (VARCHAR: `GPS`, `TIB`)
+- `lokasi_id` (FK -> `master_lokasi.id`, nullable)
 - `lokasi_raw` (VARCHAR: `Farm Cimangkok`, dll)
+- `kandang_id` (FK -> `master_kandang.id`, nullable)
 - `status` (VARCHAR: `posted`)
+- `tipe_internal` (VARCHAR, nullable)
+- `rekening_jenis` (VARCHAR, nullable)
 - `kode_coa` (VARCHAR)
 - `nama_coa` (VARCHAR)
 - `rekanan` (VARCHAR, nullable)
 - `label` (TEXT, nullable)
 - `referensi` (VARCHAR, nullable)
-- `nomor` (VARCHAR, nullable)
+- `nomor` (VARCHAR, nullable) — nomor bukti transaksi / dokumen Odoo
 - `tanggal` (DATE)
 - `debit` (NUMERIC(20,2))
 - `kredit` (NUMERIC(20,2))
 - `mutasi` (NUMERIC(20,2))
-- *Index:* `(bulan, sheet_sumber, lokasi_raw)`, `(kode_coa)`
+- *Index:* `(bulan, lokasi_raw, kode_coa)`, `(sheet_sumber, bulan)`, `(import_batch_id)`
 
 #### 6. `transaksi_ayam_bulanan` (Sesuai Kolom A s/d I Sheet CIMANGKOK)
 Sesuai baris 5 `Table Sistem Ayam.txt`:
